@@ -1,0 +1,784 @@
+{% comment %}
+    Шаблон: trusted_network/trusted_network.html
+    
+    Страница управления доверенными лицами.
+    Использует fetch() для AJAX-запросов к Django-бэкенду.
+    
+    Контекст:
+      - contacts: QuerySet доверенных лиц
+      - max_contacts: максимум контактов (5)
+{% endcomment %}
+{% load static %}
+<!DOCTYPE html>
+<html lang="kk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Сенімді адамдар желісі — ҚОРҒАУ</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        /* ======= DESIGN TOKENS ======= */
+        :root {
+            --navy: #0B1A2F;
+            --navy-light: #122240;
+            --navy-mid: #1A2E4A;
+            --white: #FFFFFF;
+            --gray-100: #E2E8F0;
+            --gray-300: #94A3B8;
+            --gray-400: #64748B;
+            --accent: #3B82F6;
+            --accent-light: #60A5FA;
+            --success: #10B981;
+            --red: #DC2626;
+            --amber: #F59E0B;
+            --font: 'Inter', sans-serif;
+            --radius: 12px;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: var(--font);
+            background: var(--navy);
+            color: var(--white);
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 720px;
+            margin: 0 auto;
+        }
+
+        /* ======= HEADER ======= */
+        .page-header {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+        .page-label {
+            display: inline-block;
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--accent);
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            margin-bottom: 12px;
+        }
+        .page-title {
+            font-size: 32px;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            margin-bottom: 8px;
+        }
+        .page-subtitle {
+            font-size: 16px;
+            color: var(--gray-400);
+        }
+
+        /* ======= INFO BLOCK ======= */
+        .info-block {
+            display: flex;
+            gap: 16px;
+            padding: 20px;
+            background: rgba(59,130,246,0.06);
+            border: 1px solid rgba(59,130,246,0.12);
+            border-left: 3px solid var(--accent);
+            border-radius: var(--radius);
+            margin-bottom: 24px;
+        }
+        .info-block .icon {
+            flex-shrink: 0;
+            width: 40px; height: 40px;
+            border-radius: 50%;
+            background: rgba(59,130,246,0.15);
+            color: var(--accent-light);
+            display: flex; align-items: center; justify-content: center;
+        }
+        .info-block h4 { color: var(--accent-light); font-size: 14px; margin-bottom: 4px; }
+        .info-block p { font-size: 13px; color: var(--gray-300); line-height: 1.7; }
+        .info-block strong { color: var(--white); }
+
+        /* ======= CARD ======= */
+        .card {
+            background: linear-gradient(135deg, var(--navy-light), var(--navy-mid));
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 16px;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+        }
+
+        /* ======= CONTACTS GRID ======= */
+        .contacts-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .contact-card {
+            background: linear-gradient(135deg, var(--navy-light), var(--navy-mid));
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: var(--radius);
+            padding: 20px;
+            position: relative;
+            overflow: hidden;
+            transition: all 0.25s;
+        }
+        .contact-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; height: 2px;
+            background: linear-gradient(90deg, transparent, var(--accent), transparent);
+            opacity: 0;
+            transition: opacity 0.25s;
+        }
+        .contact-card:hover { border-color: rgba(59,130,246,0.2); transform: translateY(-2px); }
+        .contact-card:hover::before { opacity: 1; }
+        .contact-card.confirmed { border-color: rgba(16,185,129,0.2); }
+        .contact-card.confirmed::before { background: linear-gradient(90deg, transparent, var(--success), transparent); opacity: 0.6; }
+        .contact-card.muted { opacity: 0.6; }
+
+        .contact-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+        .avatar {
+            width: 40px; height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--accent), #14B8A6);
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 800; font-size: 16px;
+        }
+        .contact-card.confirmed .avatar { background: linear-gradient(135deg, var(--success), #059669); }
+        .contact-name { font-weight: 700; font-size: 15px; }
+        .contact-phone { font-size: 12px; color: var(--gray-400); }
+
+        .badge {
+            display: inline-flex; align-items: center; gap: 4px;
+            padding: 2px 10px; font-size: 11px; font-weight: 600;
+            border-radius: 100px; margin-bottom: 12px;
+        }
+        .badge-pending { background: rgba(245,158,11,0.12); color: var(--amber); border: 1px solid rgba(245,158,11,0.2); }
+        .badge-confirmed { background: rgba(16,185,129,0.12); color: var(--success); border: 1px solid rgba(16,185,129,0.2); }
+        .badge-muted { background: rgba(100,116,139,0.12); color: var(--gray-400); border: 1px solid rgba(100,116,139,0.2); }
+
+        .contact-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+        .action-btn {
+            display: inline-flex; align-items: center; gap: 4px;
+            padding: 4px 10px;
+            font-family: var(--font); font-size: 11px; font-weight: 600;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 8px;
+            cursor: pointer; color: var(--gray-300);
+            transition: all 0.15s;
+        }
+        .action-btn:hover { background: rgba(255,255,255,0.08); transform: translateY(-1px); }
+        .action-btn.confirm-btn { color: var(--accent-light); background: rgba(59,130,246,0.08); border-color: rgba(59,130,246,0.2); }
+        .action-btn.delete-btn { color: #F87171; }
+        .action-btn.delete-btn:hover { background: rgba(220,38,38,0.1); border-color: rgba(220,38,38,0.25); }
+
+        /* ======= EMPTY STATE ======= */
+        .empty-state {
+            text-align: center; padding: 48px 20px;
+            color: var(--gray-400);
+        }
+        .empty-state p { font-weight: 600; margin-top: 12px; color: var(--gray-300); }
+        .empty-state span { font-size: 13px; }
+
+        /* ======= FORM ======= */
+        .form-card {
+            background: linear-gradient(135deg, var(--navy-light), var(--navy-mid));
+            border: 1px solid rgba(59,130,246,0.15);
+            border-radius: 16px;
+            padding: 28px;
+            margin-bottom: 16px;
+        }
+        .form-title {
+            display: flex; align-items: center; gap: 8px;
+            font-size: 18px; font-weight: 700; color: var(--accent-light);
+            margin-bottom: 20px;
+        }
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+        .form-label {
+            font-size: 11px; font-weight: 600; color: var(--gray-300);
+            letter-spacing: 0.03em; display: flex; flex-direction: column; gap: 6px;
+        }
+        .form-input {
+            width: 100%; padding: 12px 16px;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: var(--radius);
+            color: var(--white);
+            font-family: var(--font); font-size: 14px;
+            outline: none;
+            transition: border-color 0.15s, box-shadow 0.15s;
+        }
+        .form-input:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(59,130,246,0.1);
+        }
+        .form-input::placeholder { color: var(--gray-400); }
+
+        .form-actions { display: flex; gap: 8px; }
+
+        /* ======= BUTTONS ======= */
+        .btn {
+            display: inline-flex; align-items: center; gap: 8px;
+            padding: 12px 24px;
+            font-family: var(--font); font-size: 14px; font-weight: 600;
+            border-radius: var(--radius); border: none; cursor: pointer;
+            transition: all 0.25s;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent), #2563EB);
+            color: var(--white);
+            box-shadow: 0 4px 15px rgba(59,130,246,0.2);
+        }
+        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(59,130,246,0.3); }
+        .btn-secondary {
+            background: rgba(255,255,255,0.06);
+            color: var(--white);
+            border: 1px solid rgba(255,255,255,0.12);
+        }
+        .btn-secondary:hover { background: rgba(255,255,255,0.1); }
+        .btn-full { width: 100%; justify-content: center; }
+
+        .btn-add {
+            width: 100%; justify-content: center;
+            padding: 14px 20px;
+            border-style: dashed; border-width: 2px;
+        }
+        .btn-add:hover { border-style: solid; border-color: rgba(59,130,246,0.3); background: rgba(59,130,246,0.06); }
+
+        /* ======= THREAT BUTTON ======= */
+        .threat-section { text-align: center; padding: 24px 0; }
+        .btn-threat {
+            position: relative; display: inline-flex;
+            align-items: center; gap: 10px;
+            padding: 18px 40px;
+            font-family: var(--font); font-size: 18px; font-weight: 800;
+            color: var(--white);
+            background: linear-gradient(135deg, #DC2626, #991B1B);
+            border: none; border-radius: var(--radius);
+            cursor: pointer;
+            box-shadow: 0 8px 30px rgba(220,38,38,0.3);
+            transition: all 0.25s;
+        }
+        .btn-threat:hover { transform: translateY(-3px) scale(1.02); box-shadow: 0 12px 40px rgba(220,38,38,0.4); }
+        .btn-threat:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important; }
+        .btn-threat.active {
+            background: linear-gradient(135deg, #059669, #047857);
+            box-shadow: 0 8px 30px rgba(16,185,129,0.3);
+        }
+        .threat-hint { font-size: 12px; color: var(--gray-400); margin-top: 8px; }
+
+        /* ======= THREAT BANNER ======= */
+        .threat-banner {
+            display: none; align-items: center; gap: 16px;
+            padding: 16px 20px;
+            background: linear-gradient(135deg, rgba(220,38,38,0.15), rgba(220,38,38,0.08));
+            border: 1px solid rgba(220,38,38,0.3);
+            border-radius: var(--radius);
+            margin-bottom: 16px;
+        }
+        .threat-banner.active { display: flex; }
+        .threat-banner strong { color: #F87171; }
+        .threat-banner p { font-size: 13px; color: var(--gray-300); margin: 0; }
+
+        /* ======= MODAL ======= */
+        .modal-overlay {
+            display: none;
+            position: fixed; inset: 0;
+            background: rgba(11,26,47,0.85);
+            backdrop-filter: blur(8px);
+            z-index: 2000;
+            align-items: center; justify-content: center; padding: 20px;
+        }
+        .modal-overlay.active { display: flex; }
+        .modal-card {
+            background: linear-gradient(135deg, var(--navy-light), var(--navy-mid));
+            border: 1px solid rgba(59,130,246,0.2);
+            border-radius: 20px;
+            padding: 36px;
+            max-width: 440px; width: 100%;
+            box-shadow: 0 25px 50px rgba(0,0,0,0.4);
+        }
+
+        .code-inputs { display: flex; justify-content: center; gap: 8px; margin-bottom: 20px; }
+        .code-digit {
+            width: 48px; height: 56px;
+            text-align: center;
+            font-family: var(--font); font-size: 22px; font-weight: 800;
+            color: var(--white);
+            background: rgba(255,255,255,0.04);
+            border: 2px solid rgba(255,255,255,0.1);
+            border-radius: var(--radius);
+            outline: none;
+            transition: all 0.15s;
+        }
+        .code-digit:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(59,130,246,0.15); }
+        .code-sep { font-size: 20px; color: var(--gray-400); display: flex; align-items: center; }
+
+        .demo-code {
+            text-align: center; font-size: 12px; color: var(--amber);
+            margin-bottom: 16px; min-height: 20px;
+        }
+        .demo-code strong { color: var(--white); letter-spacing: 0.15em; font-size: 14px; }
+
+        .modal-actions { display: flex; gap: 8px; justify-content: center; }
+
+        /* ======= DELETE ALL ======= */
+        .danger-zone {
+            padding-top: 16px;
+            border-top: 1px solid rgba(255,255,255,0.04);
+        }
+        .btn-danger {
+            width: 100%; justify-content: center;
+            color: var(--gray-400);
+            border-color: rgba(220,38,38,0.1);
+        }
+        .btn-danger:hover { color: #F87171; background: rgba(220,38,38,0.08); border-color: rgba(220,38,38,0.25); }
+
+        /* ======= EXAMPLE MSG ======= */
+        .example-msg {
+            background: linear-gradient(135deg, var(--navy-light), var(--navy-mid));
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: var(--radius); overflow: hidden;
+            margin-top: 16px;
+        }
+        .example-header {
+            display: flex; align-items: center; gap: 6px;
+            padding: 10px 20px;
+            background: rgba(255,255,255,0.03);
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+            font-size: 11px; font-weight: 600;
+            color: var(--gray-400); letter-spacing: 0.05em;
+        }
+        .msg-bubble {
+            margin: 16px 20px;
+            background: rgba(59,130,246,0.08);
+            border: 1px solid rgba(59,130,246,0.15);
+            border-radius: var(--radius); border-bottom-left-radius: 4px;
+            padding: 14px 18px;
+            font-size: 13px; color: var(--gray-100); line-height: 1.6;
+            max-width: 85%;
+        }
+        .msg-bubble strong { color: var(--accent-light); }
+        .msg-note {
+            display: flex; align-items: center; gap: 6px;
+            padding: 0 20px 16px;
+            font-size: 11px; color: var(--success);
+        }
+
+        /* ======= TOAST ======= */
+        .toast {
+            position: fixed; bottom: 24px; left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: var(--navy-mid);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: var(--radius);
+            padding: 14px 28px;
+            font-size: 13px; font-weight: 600;
+            color: var(--white);
+            box-shadow: 0 15px 40px rgba(0,0,0,0.4);
+            z-index: 3000;
+            opacity: 0;
+            transition: all 0.4s cubic-bezier(0.4,0,0.2,1);
+        }
+        .toast.visible { transform: translateX(-50%) translateY(0); opacity: 1; }
+
+        /* ======= RESPONSIVE ======= */
+        @media (max-width: 640px) {
+            .contacts-grid { grid-template-columns: 1fr; }
+            .form-grid { grid-template-columns: 1fr; }
+            .btn-threat { width: 100%; justify-content: center; padding: 16px 20px; font-size: 16px; }
+            .code-digit { width: 40px; height: 48px; font-size: 18px; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+
+    <!-- ===== HEADER ===== -->
+    <div class="page-header">
+        <span class="page-label">Қауіпсіздік</span>
+        <h1 class="page-title">Сенімді адамдар желісі</h1>
+        <p class="page-subtitle">Сіздің жеке қорғаныс шеңберіңіз — қауіп кезінде жақындарыңызға хабарлаңыз</p>
+    </div>
+
+    <!-- ===== INFO ===== -->
+    <div class="info-block">
+        <div class="icon">ℹ️</div>
+        <div>
+            <h4>Бұл не?</h4>
+            <p>3-тен 5-ке дейін сенімді адам қосыңыз. Қауіп сезінсеңіз, бір батырманы басу арқылы олардың барлығына хабарлама жіберіледі. <strong>Ешқандай жеке деректер жіберілмейді</strong> — мекенжай, GPS орны, нақты уақыт көрінбейді.</p>
+        </div>
+    </div>
+
+    <!-- ===== THREAT BANNER ===== -->
+    <div class="threat-banner" id="threatBanner">
+        <div style="font-size: 28px;">⚠️</div>
+        <div>
+            <strong>⚠ Қауіп режимі қосулы</strong>
+            <p>Барлық расталған сенімді адамдарыңызға хабарлама жіберілді.</p>
+        </div>
+        <button class="action-btn" style="margin-left:auto; color:#F87171;" id="btnThreatOff">✕ Өшіру</button>
+    </div>
+
+    <!-- ===== CONTACTS ===== -->
+    <div class="contacts-grid" id="contactsGrid">
+        {% for c in contacts %}
+        <div class="contact-card {% if c.status == 'confirmed' %}confirmed{% elif c.status == 'muted' %}muted{% endif %}" id="contact-{{ c.id }}">
+            <div class="contact-header">
+                <div class="avatar">{{ c.display_name|first|upper }}</div>
+                <div>
+                    <div class="contact-name">{{ c.display_name }}</div>
+                    <div class="contact-phone">📱 {{ c.phone }}</div>
+                </div>
+            </div>
+            <div class="badge {% if c.status == 'confirmed' %}badge-confirmed{% elif c.status == 'muted' %}badge-muted{% else %}badge-pending{% endif %}">
+                {% if c.status == 'confirmed' %}✅ Расталды
+                {% elif c.status == 'muted' %}🔕 Өшірулі
+                {% else %}⏳ Күтуде{% endif %}
+            </div>
+            <div class="contact-actions">
+                {% if c.status == 'pending' %}
+                <button class="action-btn confirm-btn" data-action="verify" data-id="{{ c.id }}" data-phone="{{ c.phone }}">📤 Растау</button>
+                {% elif c.status == 'confirmed' %}
+                <button class="action-btn" data-action="mute" data-id="{{ c.id }}">🔕</button>
+                {% elif c.status == 'muted' %}
+                <button class="action-btn confirm-btn" data-action="mute" data-id="{{ c.id }}">🔔</button>
+                {% endif %}
+                <button class="action-btn delete-btn" data-action="delete" data-id="{{ c.id }}">❌ Жою</button>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- ===== EMPTY STATE ===== -->
+    {% if not contacts %}
+    <div class="empty-state" id="emptyState">
+        <div style="font-size: 48px; opacity: 0.5;">👥</div>
+        <p>Әзірше сенімді адам қосылмаған</p>
+        <span>Төмендегі батырманы басып, бірінші сенімді адамыңызды қосыңыз</span>
+    </div>
+    {% endif %}
+
+    <!-- ===== ADD BUTTON ===== -->
+    {% if contacts|length < max_contacts %}
+    <button class="btn btn-secondary btn-add" id="btnAdd" onclick="showForm()">
+        👤+ Сенімді адам қосу
+    </button>
+    {% endif %}
+
+    <!-- ===== ADD FORM ===== -->
+    <div class="form-card" id="formCard" style="display:none;">
+        <div class="form-title">👤+ Жаңа сенімді адам қосу</div>
+        <div class="form-grid">
+            <label class="form-label">
+                Аты (лақап ат)
+                <input type="text" id="inputName" class="form-input" placeholder="мыс: Айгүл" maxlength="30">
+            </label>
+            <label class="form-label">
+                Телефон нөмірі
+                <input type="tel" id="inputPhone" class="form-input" placeholder="+7 7XX XXX XX XX">
+            </label>
+        </div>
+        <div class="form-actions">
+            <button class="btn btn-primary" onclick="saveContact()">✓ Қосу</button>
+            <button class="btn btn-secondary" onclick="hideForm()">Бас тарту</button>
+        </div>
+    </div>
+
+    <!-- ===== THREAT BUTTON ===== -->
+    <div class="threat-section">
+        <button class="btn-threat" id="btnThreat" onclick="threatOn()">
+            🚨 Қауіп режимін қосу
+        </button>
+        <p class="threat-hint">Барлық расталған сенімді адамдарыңызға хабарлама жіберіледі</p>
+    </div>
+
+    <!-- ===== DANGER ZONE ===== -->
+    <div class="danger-zone">
+        <button class="btn btn-secondary btn-danger" onclick="deleteAll()">
+            🗑️ Барлық байланыстарды жою
+        </button>
+    </div>
+
+    <!-- ===== EXAMPLE MSG ===== -->
+    <div class="example-msg">
+        <div class="example-header">💬 Хабарлама үлгісі</div>
+        <div>
+            <div class="msg-bubble">
+                <strong>ҚОРҒАУ:</strong> [Лақап ат] қауіп режимін қосты. Бәрі жақсы екенін тексеріңізші.
+            </div>
+            <div class="msg-note">
+                🛡️ Хабарламада мекенжай, GPS орны және нақты уақыт көрсетілмейді
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ===== VERIFY MODAL ===== -->
+<div class="modal-overlay" id="verifyModal">
+    <div class="modal-card">
+        <div class="form-title">🔒 Растау коды</div>
+        <p style="font-size:13px; color:var(--gray-300); margin-bottom:20px; text-align:center;" id="verifyDesc">
+            Сенімді адамға жіберілген 6 сандық кодты енгізіңіз
+        </p>
+        <div class="code-inputs" id="codeInputs">
+            <input type="text" maxlength="1" class="code-digit" data-idx="0" inputmode="numeric">
+            <input type="text" maxlength="1" class="code-digit" data-idx="1" inputmode="numeric">
+            <input type="text" maxlength="1" class="code-digit" data-idx="2" inputmode="numeric">
+            <span class="code-sep">—</span>
+            <input type="text" maxlength="1" class="code-digit" data-idx="3" inputmode="numeric">
+            <input type="text" maxlength="1" class="code-digit" data-idx="4" inputmode="numeric">
+            <input type="text" maxlength="1" class="code-digit" data-idx="5" inputmode="numeric">
+        </div>
+        <div class="demo-code" id="demoCode"></div>
+        <div class="modal-actions">
+            <button class="btn btn-primary" onclick="verifyCode()">✓ Растау</button>
+            <button class="btn btn-secondary" onclick="closeVerify()">Жабу</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===== TOAST ===== -->
+<div class="toast" id="toast"></div>
+
+<script>
+    // ========== CSRF ==========
+    function getCookie(name) {
+        let v = null;
+        document.cookie.split(';').forEach(c => {
+            c = c.trim();
+            if (c.startsWith(name + '=')) v = decodeURIComponent(c.substring(name.length + 1));
+        });
+        return v;
+    }
+    const csrfToken = getCookie('csrftoken');
+
+    // ========== TOAST ==========
+    function showToast(message) {
+        const t = document.getElementById('toast');
+        t.textContent = message;
+        t.className = 'toast visible';
+        setTimeout(() => t.className = 'toast', 3000);
+    }
+
+    // ========== FORM ==========
+    function showForm() {
+        document.getElementById('formCard').style.display = 'block';
+        document.getElementById('btnAdd').style.display = 'none';
+    }
+    function hideForm() {
+        document.getElementById('formCard').style.display = 'none';
+        document.getElementById('btnAdd').style.display = '';
+        document.getElementById('inputName').value = '';
+        document.getElementById('inputPhone').value = '';
+    }
+
+    // ========== SAVE CONTACT ==========
+    async function saveContact() {
+        const name = document.getElementById('inputName').value.trim();
+        const phone = document.getElementById('inputPhone').value.trim();
+
+        if (!name) { showToast('❌ Атын енгізіңіз'); return; }
+        if (!phone || phone.replace(/\D/g, '').length < 10) { showToast('❌ Телефон нөмірін дұрыс енгізіңіз'); return; }
+
+        const formData = new FormData();
+        formData.append('name', name);
+        formData.append('phone', phone);
+
+        try {
+            const res = await fetch("{% url 'trusted_network:add' %}", {
+                method: 'POST',
+                headers: { 'X-CSRFToken': csrfToken },
+                body: formData
+            });
+            const data = await res.json();
+
+            if (data.status === 'ok') {
+                showToast(data.message);
+                hideForm();
+                // Показать модалку с демо-кодом
+                currentVerifyId = data.contact_id;
+                document.getElementById('demoCode').innerHTML =
+                    '🔑 Демо код: <strong>' + data.demo_code + '</strong>';
+                document.getElementById('verifyDesc').textContent =
+                    data.phone + ' нөміріне жіберілген 6 санды енгізіңіз';
+                document.querySelectorAll('.code-digit').forEach(i => i.value = '');
+                document.getElementById('verifyModal').classList.add('active');
+                setTimeout(() => document.querySelector('.code-digit[data-idx="0"]').focus(), 200);
+                // Перезагрузить страницу после 2 секунд
+                setTimeout(() => location.reload(), 2000);
+            } else {
+                showToast(data.message);
+            }
+        } catch (err) {
+            showToast('❌ Қате кетті');
+        }
+    }
+
+    // ========== VERIFY ==========
+    let currentVerifyId = null;
+
+    function openVerify(id, phone) {
+        currentVerifyId = id;
+        document.getElementById('verifyDesc').textContent = phone + ' нөміріне жіберілген 6 санды енгізіңіз';
+        document.getElementById('demoCode').innerHTML = '';
+        document.querySelectorAll('.code-digit').forEach(i => i.value = '');
+        document.getElementById('verifyModal').classList.add('active');
+        setTimeout(() => document.querySelector('.code-digit[data-idx="0"]').focus(), 200);
+    }
+
+    function closeVerify() {
+        document.getElementById('verifyModal').classList.remove('active');
+        currentVerifyId = null;
+    }
+
+    // ========== EVENT DELEGATION for contact action buttons ==========
+    document.getElementById('contactsGrid').addEventListener('click', function(e) {
+        const btn = e.target.closest('[data-action]');
+        if (!btn) return;
+
+        const action = btn.dataset.action;
+        const id = btn.dataset.id;
+
+        if (action === 'verify') {
+            openVerify(id, btn.dataset.phone);
+        } else if (action === 'mute') {
+            toggleMute(id);
+        } else if (action === 'delete') {
+            deleteContact(id);
+        }
+    });
+
+    // Auto-advance code digits
+    document.querySelectorAll('.code-digit').forEach(input => {
+        input.addEventListener('input', function() {
+            this.value = this.value.replace(/\D/g, '');
+            if (this.value && this.dataset.idx < 5) {
+                const next = document.querySelector('.code-digit[data-idx="' + (parseInt(this.dataset.idx) + 1) + '"]');
+                if (next) next.focus();
+            }
+        });
+        input.addEventListener('keydown', function(e) {
+            if (e.key === 'Backspace' && !this.value && this.dataset.idx > 0) {
+                const prev = document.querySelector('.code-digit[data-idx="' + (parseInt(this.dataset.idx) - 1) + '"]');
+                if (prev) { prev.focus(); prev.value = ''; }
+            }
+        });
+    });
+
+    async function verifyCode() {
+        let code = '';
+        document.querySelectorAll('.code-digit').forEach(i => code += i.value);
+        if (code.length !== 6) { showToast('❌ 6 санды толық енгізіңіз'); return; }
+
+        const formData = new FormData();
+        formData.append('code', code);
+
+        try {
+            const res = await fetch(`/trusted/verify/${currentVerifyId}/`, {
+                method: 'POST',
+                headers: { 'X-CSRFToken': csrfToken },
+                body: formData
+            });
+            const data = await res.json();
+            showToast(data.message);
+            if (data.status === 'ok') {
+                closeVerify();
+                setTimeout(() => location.reload(), 1000);
+            }
+        } catch (err) {
+            showToast('❌ Қате кетті');
+        }
+    }
+
+    // ========== DELETE ==========
+    async function deleteContact(id) {
+        if (!confirm('Контактты жоясыз ба?')) return;
+        try {
+            const res = await fetch(`/trusted/delete/${id}/`, {
+                method: 'POST',
+                headers: { 'X-CSRFToken': csrfToken }
+            });
+            const data = await res.json();
+            showToast(data.message);
+            if (data.status === 'ok') location.reload();
+        } catch (err) { showToast('❌ Қате кетті'); }
+    }
+
+    // ========== MUTE ==========
+    async function toggleMute(id) {
+        try {
+            const res = await fetch(`/trusted/toggle-mute/${id}/`, {
+                method: 'POST',
+                headers: { 'X-CSRFToken': csrfToken }
+            });
+            const data = await res.json();
+            showToast(data.message);
+            if (data.status === 'ok') location.reload();
+        } catch (err) { showToast('❌ Қате кетті'); }
+    }
+
+    // ========== THREAT ==========
+    async function threatOn() {
+        if (!confirm('⚠ Қауіп режимін қосасыз ба?\n\nБарлық расталған сенімді адамдарыңызға хабарлама жіберіледі.')) return;
+        try {
+            const res = await fetch("{% url 'trusted_network:threat_on' %}", {
+                method: 'POST',
+                headers: { 'X-CSRFToken': csrfToken }
+            });
+            const data = await res.json();
+            showToast(data.message);
+            if (data.status === 'ok') {
+                document.getElementById('threatBanner').classList.add('active');
+                document.getElementById('btnThreat').classList.add('active');
+                document.getElementById('btnThreat').textContent = '✅ Қауіп режимі қосулы — өшіру';
+            }
+        } catch (err) { showToast('❌ Қате кетті'); }
+    }
+
+    async function threatOff() {
+        try {
+            const res = await fetch("{% url 'trusted_network:threat_off' %}", {
+                method: 'POST',
+                headers: { 'X-CSRFToken': csrfToken }
+            });
+            const data = await res.json();
+            showToast(data.message);
+            if (data.status === 'ok') {
+                document.getElementById('threatBanner').classList.remove('active');
+                document.getElementById('btnThreat').classList.remove('active');
+                document.getElementById('btnThreat').textContent = '🚨 Қауіп режимін қосу';
+            }
+        } catch (err) { showToast('❌ Қате кетті'); }
+    }
+
+    // Bind threat-off button
+    document.getElementById('btnThreatOff').addEventListener('click', threatOff);
+
+    // ========== DELETE ALL ==========
+    async function deleteAll() {
+        if (!confirm('⚠ Барлық байланыстарды жоясыз ба?\n\nБұл әрекетті кері қайтару мүмкін емес!')) return;
+        try {
+            const res = await fetch("{% url 'trusted_network:delete_all' %}", {
+                method: 'POST',
+                headers: { 'X-CSRFToken': csrfToken }
+            });
+            const data = await res.json();
+            showToast(data.message);
+            if (data.status === 'ok') location.reload();
+        } catch (err) { showToast('❌ Қате кетті'); }
+    }
+</script>
+
+</body>
+</html>
